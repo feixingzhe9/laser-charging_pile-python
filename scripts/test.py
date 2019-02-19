@@ -22,7 +22,7 @@ sub_scan = None
 pub_velocity = None
 sub_odom = None
 
-global_position = None
+global_odom = None
 
 once_flag = True
 insert_num = 5
@@ -34,7 +34,7 @@ COLOR_GREEN = [0, 255, 0]
 LINE_LENGTH_MIN = 0.40   #meter
 LINE_LENGTH_MAX = 0.50   #meter
 
-RANGE_MAX = 2.00
+RANGE_MAX = 1.50
 RANGE_MIN = 0.05
 
 RANGE_ANGLE_MIN = -0.49
@@ -66,6 +66,13 @@ class Bisector(object):
 
 target_position = Position()
 target_bisector = Bisector()
+
+intersector_position = Position()
+cur_target_position = Position()
+pre_target_position = Position()
+in_front_of_charging_pile_position = Position()
+
+cur_target_odom = None
 
 def cal_angel(k):
     tan_k = (k[1] - k[0]) / (1 + k[1] * k [0])
@@ -184,8 +191,9 @@ def laser_scan_callback(scan):
 #        if abs(x) >= 0.01 and abs(y) >= 0.01:
         if distance > RANGE_MIN:
             if distance < RANGE_MAX:
+                ########
                 img[750 - int((y) * times), 750 - int((x) * times)] = COLOR_GREEN
-
+                ########
                 if abs(x - x_last) < 0.02 and abs(y - y_last) < 0.02:
                     point = [x, y]
                     line.append(point)
@@ -217,6 +225,7 @@ def laser_scan_callback(scan):
                 [[k1, b1], [k2, b2]] = fit_2_line_test(_line)
 
                 angel = cal_angel([k1, k2])
+                #print "angel: ", angel
 
                 if angel > RANGE_ANGLE_MIN and angel < RANGE_ANGLE_MAX:
 
@@ -225,7 +234,10 @@ def laser_scan_callback(scan):
                     cv2.line(img_2, (750 - int(_line[len(_line) / 2][0] * times), 750 - int((_line[len(_line) / 2][0] * k2 + b2) * times)),  \
                                     (750 - int(_line[len(_line) - 1][0] * times), 750 - int((_line[len(_line) - 1][0] * k2 + b2) * times)), (255, 255, 255), 1)
                     [point_x, point_y] = cal_point_of_intersection([[k1, b1], [k2, b2]])
-                    #print point_x, point_y
+                    #print "intersection point  x: ", point_x, "y: ", point_y
+                    global intersector_position
+                    intersector_position.x = point_y
+                    intersector_position.y = point_x
                     img_2[(750 - int((point_y) * times) - 3) : (750 - int((point_y) * times) + 3), (750 - int((point_x) * times) - 3) : (750 - int((point_x) * times) + 3)] = COLOR_BLUE
                     ########
 
@@ -248,7 +260,7 @@ def laser_scan_callback(scan):
                     sum_bisector_b += b_bisector
                     global_cnt += 1
                     #print "global cnt", global_cnt
-                    if global_cnt >= 5:
+                    if global_cnt >= 1:
                         global target_position
                         global target_bisector
                         target_position.x = sum_target_x / global_cnt
@@ -262,7 +274,7 @@ def laser_scan_callback(scan):
                         y0 = target_position.y
                         k = target_bisector.k
                         b = target_bisector.b
-                        L = 0.15
+                        L = 0.30 + 0.53
                         tmp_x = 0
                         if k < 0:
                             tmp_x = ((x0 + k*y0 - k*b)   +   (( k*k*L*L -k*k*x0*x0 + 2*k*x0*y0 -2*k*b*x0 + 2*b*y0 -y0*y0 -b*b + L*L ) ** 0.5) ) / ( 1 + k*k)
@@ -283,8 +295,6 @@ def laser_scan_callback(scan):
                         img_2[750 - int((y) * times), 750 - int((x) * times)] = COLOR_RED
 
     line_buf = []
-    #print line_buf
-#    del line_buf[:]
     global once_flag
     if once_flag == True:
         img[747:753, 747:753] = COLOR_BLUE
@@ -296,8 +306,8 @@ def laser_scan_callback(scan):
 
 
 def odom_callback(odom):
-    global global_position
-    global_position = odom.pose.pose
+    global global_odom
+    global_odom = odom.pose.pose
 
 def pub_twist(linear = 0.00, angular = 0.00):
     global velocity_pub
@@ -306,8 +316,8 @@ def pub_twist(linear = 0.00, angular = 0.00):
     velocity.angular.z = angular
     pub_velocity.publish(velocity)
 
-def cal_target_point(x0, y0, k, b):
-    L = 0.30 + 0.53
+def cal_target_point(x0, y0, k, b, L = 0.50 + 0.53):
+    #L = 0.50 + 0.53
     target_x = 0
     target_y = 0
     if k < 0:
@@ -319,7 +329,7 @@ def cal_target_point(x0, y0, k, b):
 
 def cal_target_odom_point(x, y, k, b):
     [x0, y0] = cal_target_point(x, y, k, b)
-    x0 = x0 + global_position.position.x
+    x0 = x0 + global_odom.position.x
 
 def move_to_target(tmp):
     line_velocity = 0
@@ -330,18 +340,30 @@ def move_to_target(tmp):
     L_delta = 0.02
     th_odom = 0
     my_position = None
+    vx = 0
+    vth = 0
+
+    #### to target ####
+    delta_th = 0
+    delta_x = 0
+    delta_y = 0
+    distance = 0
     global target_position
     global target_bisector
-    global global_position
+    global global_odom
+
+    global in_front_of_charging_pile_position
+    global cur_target_position
+    global cur_target_odom
     time.sleep(3)
     while not rospy.is_shutdown():
         if 1:
-            time.sleep(0.05)
+            time.sleep(0.03)
             #print_obj(target_position)
             #print_obj(target_bisector)
             target_x = 0
             target_y = 0
-            if step <= 2:                ##### move to the position 0.2m in front of charging pile
+            if step <= 4:                ##### move to the position 0.2m in front of charging pile
                                          ### calculate the posiont of 0.2m in front of charging pile ###
                 if (target_position.x ** 2 + target_position.y ** 2) ** 0.5 >= 0.2:
                     ###
@@ -349,73 +371,217 @@ def move_to_target(tmp):
                     y0 = target_position.y
                     k = target_bisector.k
                     b = target_bisector.b
-                    [target_x, target_y] = cal_target_point(x0, y0, k, b)
+                    if step <= 3:
+                        [target_x, target_y] = cal_target_point(x0, y0, k, b)
+                    else:
+                        [target_x, target_y] = cal_target_point(x0, y0, k, b, 0.53 + 0.05)
+                    in_front_of_charging_pile_position.x = target_x
+                    in_front_of_charging_pile_position.y = target_y
                     ### calculate th
                     th = np.arctan(target_x / target_y)
-                    print "th:", th
-                    print "target_x: ", target_x, "   target_y:", target_y
-                    print step
+                    #print "th:", th
+                    #print "target_x: ", target_x, "   target_y:", target_y
 
-            if step == 1:   ## xjbz
+                    delta_x = cur_target_odom[0] - global_odom.position.x
+                    delta_y = cur_target_odom[1] - global_odom.position.y
+                    distance = (delta_x**2 + delta_y**2)**0.5
+                    arcsin = np.arcsin(delta_y / distance)
+                    arcsin_d = 0
+                    if delta_x >= 0:
+                        if delta_y >= 0:
+                            arcsin_d = arcsin
+                        else:
+                            arcsin_d = arcsin
+                    else:
+                        if delta_y >= 0:
+                            arcsin_d = np.pi - arcsin
+                        else:
+                            arcsin_d = -arcsin - np.pi
+                    delta_th = arcsin_d - 2*np.arcsin(global_odom.orientation.z)
+                    print "delta_th", delta_th
+                    print "distance: ", distance
+                    print "vth: ", vth
+                    print "vx: ", vx
+                    print "step: ", step
+                    print 'cur_target_odom :', cur_target_odom
+                    print 'cur_odom x: ', global_odom.position.x, " y: ", global_odom.position.y
+                    print 'cur_target_position:', print_obj(cur_target_position)
+
+            if step == 1:
                 if (target_position.x ** 2 + target_position.y ** 2) ** 0.5 >= 0.2:
                     ###
+                    cur_target_position = in_front_of_charging_pile_position
+                    #cur_target_position = target_position
                     if pre_step != 1:
-                        my_position = global_position
+                        my_position = global_odom
                         th_odom = th
                         pre_step = 1
-                    print "step 1 x:", target_x, " y:", target_y
-                    delta_th = 2*np.arcsin(global_position.orientation.z) - 2*np.arcsin(my_position.orientation.z) - th_odom
-                    print "delta_th", delta_th
+                        time.sleep(0.3)
+                    #print "delta_th", delta_th
                     if abs(delta_th) <= 0.02:
                         step = 2
+                        print "goto step 2"
                         time.sleep(0.5)
                     else:
-                        if delta_th < 0:
-                            pub_twist(0, 0.02)
+                        _th = 0
+                        #sign = 1
+                        if abs(delta_th) > 0.06:
+                            _th = delta_th
                         else:
-                            pub_twist(0, -0.02)
-                        ##TODO publish augular velocity
-                        print "publish angular velocity"
+                            _th = 0.03
+                        if delta_th > 0:
+                            vth = min(0.1, _th)
+                            #sign = 1
+                            #pub_twist(0, 0.05)
+                        else:
+                            #sign = -1
+                            vth = max(-0.1, _th)
+                            #pub_twist(0, -0.05)
 
-            if step == 2:
-                print "step = 2"
+                        #_th = min(0.1, _th)
+                        pub_twist(0, vth)
+                        #print "publish angular velocity"
+
+            elif step == 2:
+                cur_target_position = in_front_of_charging_pile_position
+                #cur_target_position = target_position
+                if pre_step != 2:
+                    pre_step = 2
+                    time.sleep(0.3)
+                #print "step = 2"
                 #if abs(th) > 0.05:
                 if 0:
                     #step = 1
                     pass
                 else:
-                    if target_x ** 2 + target_y ** 2 <= (L + L_delta / 2)**2:
+                    if 0:
+                        pass
+                    else:
+                        _th = 0
+                        if abs(delta_th) > 0.05:
+                            _th = delta_th
+                        else:
+                            _th = 0.03
+                        if delta_th > 0:
+                            vth = min(0.05, _th)
+                        else:
+                            vth = max(-0.05, _th)
+
+                    #print "distance: ", distance
+                    #print "vth: ", vth
+                    #print 'cur_target_odom :', cur_target_odom
+                    #print 'cur_odom x: ', global_odom.position.x, " y: ", global_odom.position.y
+                    if distance >= 0.05:
+                        vx = min(0.08, distance / 2)
+                    if distance < 0.05:
                         step = 3
-                        print "step = 3"
+                        print "goto step 3"
+                        continue
                     else:
                         ##TODO publish line velocity
-                        print "publish line velocity"
-                        pub_twist(0.02, 0)
-            if step == 3:
+                        #print "publish line velocity"
+                        pub_twist(vx, vth)
+            elif step == 3:
+                cur_target_position = target_position
+                #cur_target_position = in_front_of_charging_pile_position
+                #cur_target_position = target_position
+                vx = 0
+                if pre_step != 3:
+                    pre_step = 3
+                    time.sleep(0.3)
+                #print "step 1 x:", target_x, " y:", target_y
+                #print "delta_th", delta_th
+                #print 'cur_target_position:', print_obj(cur_target_position)
+                #print 'cur_target_odom :', cur_target_odom
+                #print 'cur_odom x: ', global_odom.position.x, " y: ", global_odom.position.y
+                if abs(delta_th) <= 0.015:
+                    step = 4
+                    print "goto step 4"
+                    time.sleep(0.5)
+                else:
+                    _th = 0
+                    if abs(delta_th) > 0.05:
+                        _th = delta_th
+                    else:
+                        _th = 0.03
+                    if delta_th > 0:
+                        vth = min(0.05, _th)
+                        #pub_twist(0, 0.05)
+                    else:
+                        vth = max(-0.05, _th)
+                        #pub_twist(0, -0.05)
+
+                    #_th = min(0.1, _th)
+                    pub_twist(0, vth)
+                    #print "publish angular velocity"
+
+
+
                 ### TODO: publish line velocity(forward)
-                print "start step 3: just go forward"
+                #print "start step 3: just go forward"
+                #pub_twist(0.02, 0)
+                #pass
+
+            elif step == 4:
+                #cur_target_position = target_position
+                cur_target_position = in_front_of_charging_pile_position
+                #cur_target_position = target_position
+                if pre_step != 4:
+                    pre_step = 4
+                    time.sleep(0.5)
+
+                if 0:
+                    #step = 1
+                    pass
+                else:
+                    if abs(delta_th) > 0.05:
+                        _th = delta_th
+                    else:
+                        _th = 0.03
+                    if delta_th > 0:
+                        vth = min(0.05, _th)
+                    else:
+                        vth = max(-0.05, _th)
+
+                    if distance >= 0.05:
+                        vx = min(0.03, distance / 2)
+                    if distance < 0.05:
+
+                        print "done ! "
+                        break
+                    else:
+                        ##TODO publish line velocity
+                        #print "publish line velocity"
+                        pub_twist(vx, vth)
         else:
             time.sleep(1)
 
 def pub_tf_test(tmp):
+    global intersector_position
+    global cur_target_position
     while not rospy.is_shutdown():
+        #print_obj(cur_target_position)
+        y = cur_target_position.x
+        x = cur_target_position.y
+        cur_target_position
         br = tf.TransformBroadcaster()
-        br.sendTransform((1, 0.2, 0),
+        br.sendTransform((x, y, 0),
                         tf.transformations.quaternion_from_euler(0, 0, 0),
                         rospy.Time.now(),
                         "in_front_of_charging_pile",
                         "laser"
                         )
-        time.sleep(0.1)
+        time.sleep(0.05)
 
 def transform_test(tmp):
     listener = tf.TransformListener()
+    global cur_target_odom
     while not rospy.is_shutdown():
         try:
-            (trans, rot) = listener.lookupTransform('odom', 'in_front_of_charging_pile', rospy.Time(0))
-            print 'trans:', trans
-            print 'rot:', rot
-            time.sleep(0.1)
+            (cur_target_odom, rot) = listener.lookupTransform('odom', 'in_front_of_charging_pile', rospy.Time(0))
+            #print 'cur_target_odom:', cur_target_odom
+            #print 'rot:', rot
+            time.sleep(0.05)
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
             continue
 
@@ -435,14 +601,11 @@ def main():
     init()
     rate = rospy.Rate(10)
     time.sleep(1)
-    #test_img = cv2.imread("test.jpg")
-    #cv2.imshow('test img', test_img)
-#    plt.ion()
-#    plt.figure(1)
-#    plt.add_subplot(111)
+
     thread_move_to_target = threading.Thread(target = move_to_target, args = (0,))
     thread_pub_tf_test = threading.Thread(target = pub_tf_test, args = (0,))
     thread_transform_test = threading.Thread(target = transform_test, args = (0,))
+
     thread_move_to_target.start()
     thread_pub_tf_test.start()
     thread_transform_test.start()
