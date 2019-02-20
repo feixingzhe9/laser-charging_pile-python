@@ -281,7 +281,9 @@ def laser_scan_callback(scan):
                         else:
                             tmp_x = ((x0 + k*y0 - k*b)   -   (( k*k*L*L -k*k*x0*x0 + 2*k*x0*y0 -2*k*b*x0 + 2*b*y0 -y0*y0 -b*b + L*L ) ** 0.5) ) / ( 1 + k*k)
                         tmp_y = k*tmp_x + b
-                        img_2[(750 - int((tmp_y) * times) - 3) : (750 - int((tmp_y) * times) + 3), (750 - int((tmp_x) * times) - 3) : (750 - int((tmp_x) * times) + 3)] = COLOR_BLUE
+                        #img_2[(750 - int((tmp_y) * times) - 3) : (750 - int((tmp_y) * times) + 3), (750 - int((tmp_x) * times) - 3) : (750 - int((tmp_x) * times) + 3)] = COLOR_BLUE
+                        img_2[(750 - int((in_front_of_charging_pile_position.y) * times) - 3) : (750 - int((in_front_of_charging_pile_position.y) * times) + 3), (750 - int((in_front_of_charging_pile_position.x) * times) - 3) : (750 - int((in_front_of_charging_pile_position.x) * times) + 3)] = COLOR_BLUE
+
                         ########
                         sum_target_x = 0
                         sum_target_y = 0
@@ -316,7 +318,7 @@ def pub_twist(linear = 0.00, angular = 0.00):
     velocity.angular.z = angular
     pub_velocity.publish(velocity)
 
-def cal_target_point(x0, y0, k, b, L = 0.50 + 0.53):
+def cal_target_point(x0, y0, k, b, L):
     #L = 0.50 + 0.53
     target_x = 0
     target_y = 0
@@ -327,27 +329,26 @@ def cal_target_point(x0, y0, k, b, L = 0.50 + 0.53):
     target_y = k*target_x + b
     return [target_x, target_y]
 
-def cal_target_odom_point(x, y, k, b):
-    [x0, y0] = cal_target_point(x, y, k, b)
-    x0 = x0 + global_odom.position.x
 
 def move_to_target(tmp):
     line_velocity = 0
     angular_velocity = 0
     step = 1
     pre_step = 0
-    L = 0.15 + 0.53
+    L = 0.45 + 0.53
     L_delta = 0.02
     th_odom = 0
     my_position = None
     vx = 0
     vth = 0
 
+    k = target_bisector.k
     #### to target ####
     delta_th = 0
     delta_x = 0
     delta_y = 0
     distance = 0
+    confirm_cnt = 0
     global target_position
     global target_bisector
     global global_odom
@@ -365,49 +366,53 @@ def move_to_target(tmp):
             target_y = 0
             if step <= 4:                ##### move to the position 0.2m in front of charging pile
                                          ### calculate the posiont of 0.2m in front of charging pile ###
-                if (target_position.x ** 2 + target_position.y ** 2) ** 0.5 >= 0.2:
-                    ###
-                    x0 = target_position.x
-                    y0 = target_position.y
-                    k = target_bisector.k
-                    b = target_bisector.b
-                    if step <= 3:
-                        [target_x, target_y] = cal_target_point(x0, y0, k, b)
-                    else:
-                        [target_x, target_y] = cal_target_point(x0, y0, k, b, 0.53 + 0.05)
-                    in_front_of_charging_pile_position.x = target_x
-                    in_front_of_charging_pile_position.y = target_y
-                    ### calculate th
-                    th = np.arctan(target_x / target_y)
-                    #print "th:", th
-                    #print "target_x: ", target_x, "   target_y:", target_y
+                ###
+                x0 = target_position.x
+                y0 = target_position.y
+                k = target_bisector.k
+                b = target_bisector.b
+                if step <= 3:
+                    [target_x, target_y] = cal_target_point(x0, y0, k, b, 0.53 + 0.55)
+                else:
+                    [target_x, target_y] = cal_target_point(x0, y0, k, b, 0.53 + 0.16)
+                in_front_of_charging_pile_position.x = target_x
+                in_front_of_charging_pile_position.y = target_y
+                ### calculate th
+                if abs(target_x) >= 0.0001:
+                    th = np.arctan(target_y / target_x)
+                else:
+                    th = np.pi / 2
+                #print "th:", th
+                #print "target_x: ", target_x, "   target_y:", target_y
 
-                    delta_x = cur_target_odom[0] - global_odom.position.x
-                    delta_y = cur_target_odom[1] - global_odom.position.y
-                    distance = (delta_x**2 + delta_y**2)**0.5
-                    arcsin = np.arcsin(delta_y / distance)
-                    arcsin_d = 0
-                    if delta_x >= 0:
-                        if delta_y >= 0:
-                            arcsin_d = arcsin
-                        else:
-                            arcsin_d = arcsin
+                delta_x = cur_target_odom[0] - global_odom.position.x
+                delta_y = cur_target_odom[1] - global_odom.position.y
+                distance = (delta_x**2 + delta_y**2)**0.5
+                arcsin = np.arcsin(delta_y / distance)
+                arcsin_d = 0
+                if delta_x >= 0:
+                    if delta_y >= 0:
+                        arcsin_d = arcsin
                     else:
-                        if delta_y >= 0:
-                            arcsin_d = np.pi - arcsin
-                        else:
-                            arcsin_d = -arcsin - np.pi
-                    delta_th = arcsin_d - 2*np.arcsin(global_odom.orientation.z)
-                    print "delta_th", delta_th
-                    print "distance: ", distance
-                    print "vth: ", vth
-                    print "vx: ", vx
-                    print "step: ", step
-                    print 'cur_target_odom :', cur_target_odom
-                    print 'cur_odom x: ', global_odom.position.x, " y: ", global_odom.position.y
-                    print 'cur_target_position:', print_obj(cur_target_position)
+                        arcsin_d = arcsin
+                else:
+                    if delta_y >= 0:
+                        arcsin_d = np.pi - arcsin
+                    else:
+                        arcsin_d = -arcsin - np.pi
+                delta_th = arcsin_d - 2*np.arcsin(global_odom.orientation.z)
+                print "delta_th", delta_th
+                print "distance: ", distance
+                print "vth: ", vth
+                print "vx: ", vx
+                print "k: ", k
+                print "step: ", step
+                print 'cur_target_odom :', cur_target_odom
+                print 'cur_odom x: ', global_odom.position.x, " y: ", global_odom.position.y
+                print 'cur_target_position:', print_obj(cur_target_position)
 
             if step == 1:
+                vx = 0
                 if (target_position.x ** 2 + target_position.y ** 2) ** 0.5 >= 0.2:
                     ###
                     cur_target_position = in_front_of_charging_pile_position
@@ -418,17 +423,25 @@ def move_to_target(tmp):
                         pre_step = 1
                         time.sleep(0.3)
                     #print "delta_th", delta_th
-                    if abs(delta_th) <= 0.02:
-                        step = 2
-                        print "goto step 2"
-                        time.sleep(0.5)
+                    if abs(delta_th) <= 0.015:
+                        vx = 0
+                        v_th = 0
+                        confirm_cnt += 1
+                        if confirm_cnt >= 3:
+                            confirm_cnt = 0
+                            step = 2
+                            print "goto step 2"
+                            time.sleep(0.5)
                     else:
                         _th = 0
                         #sign = 1
                         if abs(delta_th) > 0.06:
                             _th = delta_th
                         else:
-                            _th = 0.03
+                            if delta_th > 0:
+                                _th = 0.03
+                            else:
+                                _th = -0.03
                         if delta_th > 0:
                             vth = min(0.1, _th)
                             #sign = 1
@@ -467,18 +480,13 @@ def move_to_target(tmp):
                         else:
                             vth = max(-0.05, _th)
 
-                    #print "distance: ", distance
-                    #print "vth: ", vth
-                    #print 'cur_target_odom :', cur_target_odom
-                    #print 'cur_odom x: ', global_odom.position.x, " y: ", global_odom.position.y
                     if distance >= 0.05:
                         vx = min(0.08, distance / 2)
-                    if distance < 0.05:
+                    if distance < 0.025:
                         step = 3
                         print "goto step 3"
                         continue
                     else:
-                        ##TODO publish line velocity
                         #print "publish line velocity"
                         pub_twist(vx, vth)
             elif step == 3:
@@ -489,21 +497,24 @@ def move_to_target(tmp):
                 if pre_step != 3:
                     pre_step = 3
                     time.sleep(0.3)
-                #print "step 1 x:", target_x, " y:", target_y
-                #print "delta_th", delta_th
-                #print 'cur_target_position:', print_obj(cur_target_position)
-                #print 'cur_target_odom :', cur_target_odom
-                #print 'cur_odom x: ', global_odom.position.x, " y: ", global_odom.position.y
                 if abs(delta_th) <= 0.015:
-                    step = 4
-                    print "goto step 4"
-                    time.sleep(0.5)
+                    vx = 0
+                    v_th = 0
+                    confirm_cnt += 1
+                    if confirm_cnt >= 3:
+                        confirm_cnt = 0
+                        step = 4
+                        print "goto step 4"
+                        time.sleep(0.5)
                 else:
                     _th = 0
                     if abs(delta_th) > 0.05:
                         _th = delta_th
                     else:
-                        _th = 0.03
+                        if delta_th > 0:
+                            _th = 0.03
+                        else:
+                            _th = -0.03
                     if delta_th > 0:
                         vth = min(0.05, _th)
                         #pub_twist(0, 0.05)
@@ -515,17 +526,9 @@ def move_to_target(tmp):
                     pub_twist(0, vth)
                     #print "publish angular velocity"
 
-
-
-                ### TODO: publish line velocity(forward)
-                #print "start step 3: just go forward"
-                #pub_twist(0.02, 0)
-                #pass
-
             elif step == 4:
-                #cur_target_position = target_position
-                cur_target_position = in_front_of_charging_pile_position
-                #cur_target_position = target_position
+                cur_target_position = target_position
+                #cur_target_position = in_front_of_charging_pile_position
                 if pre_step != 4:
                     pre_step = 4
                     time.sleep(0.5)
@@ -534,11 +537,27 @@ def move_to_target(tmp):
                     #step = 1
                     pass
                 else:
-                    if abs(delta_th) > 0.05:
-                        _th = delta_th
+                    #if abs(k) > 50.0:
+                        #_th = 0
+                    #else:
+                        #_th = 1.0 / k
+                    #if abs(delta_th) < 0.02:
+                        #_th = 0
+                    #else:
+                        #if delta_th > 0:
+                            #_th = 0.03
+                        #else:
+                            #_th = -0.03
+                    _y = target_position.x
+                    print "_y: ", _y
+                    if abs(_y) < 0.015:
+                        _th = 0
                     else:
-                        _th = 0.03
-                    if delta_th > 0:
+                        #if target_position.y > 0:
+                        _th = _y
+                    #if k > 0:
+                    #if delta_th > 0:
+                    if _y > 0:
                         vth = min(0.05, _th)
                     else:
                         vth = max(-0.05, _th)
@@ -550,7 +569,6 @@ def move_to_target(tmp):
                         print "done ! "
                         break
                     else:
-                        ##TODO publish line velocity
                         #print "publish line velocity"
                         pub_twist(vx, vth)
         else:
