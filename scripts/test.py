@@ -349,6 +349,8 @@ def move_to_target(tmp):
     delta_y = 0
     distance = 0
     confirm_cnt = 0
+    max_vx = 0.2
+    max_vth = 0.2
     global target_position
     global target_bisector
     global global_odom
@@ -435,7 +437,7 @@ def move_to_target(tmp):
                     else:
                         _th = 0
                         #sign = 1
-                        if abs(delta_th) > 0.06:
+                        if abs(delta_th) > 0.10:
                             _th = delta_th
                         else:
                             if delta_th > 0:
@@ -443,12 +445,12 @@ def move_to_target(tmp):
                             else:
                                 _th = -0.03
                         if delta_th > 0:
-                            vth = min(0.1, _th)
+                            vth = min(max_vth, _th)
                             #sign = 1
                             #pub_twist(0, 0.05)
                         else:
                             #sign = -1
-                            vth = max(-0.1, _th)
+                            vth = max(-max_vth, _th)
                             #pub_twist(0, -0.05)
 
                         #_th = min(0.1, _th)
@@ -476,12 +478,12 @@ def move_to_target(tmp):
                         else:
                             _th = 0.03
                         if delta_th > 0:
-                            vth = min(0.05, _th)
+                            vth = min(max_vth, _th)
                         else:
-                            vth = max(-0.05, _th)
+                            vth = max(-max_vth, _th)
 
                     if distance >= 0.05:
-                        vx = min(0.08, distance / 2)
+                        vx = min(max_vx, distance / 2)
                     if distance < 0.025:
                         step = 3
                         print "goto step 3"
@@ -508,7 +510,7 @@ def move_to_target(tmp):
                         time.sleep(0.5)
                 else:
                     _th = 0
-                    if abs(delta_th) > 0.05:
+                    if abs(delta_th) > 0.10:
                         _th = delta_th
                     else:
                         if delta_th > 0:
@@ -516,10 +518,10 @@ def move_to_target(tmp):
                         else:
                             _th = -0.03
                     if delta_th > 0:
-                        vth = min(0.05, _th)
+                        vth = min(max_vth / 1.5, _th)
                         #pub_twist(0, 0.05)
                     else:
-                        vth = max(-0.05, _th)
+                        vth = max(-max_vth / 1.5, _th)
                         #pub_twist(0, -0.05)
 
                     #_th = min(0.1, _th)
@@ -549,6 +551,7 @@ def move_to_target(tmp):
                         #else:
                             #_th = -0.03
                     _y = target_position.x
+                    #_y = target_x
                     print "_y: ", _y
                     if abs(_y) < 0.015:
                         _th = 0
@@ -558,9 +561,9 @@ def move_to_target(tmp):
                     #if k > 0:
                     #if delta_th > 0:
                     if _y > 0:
-                        vth = min(0.05, _th)
+                        vth = min(max_vth / 2.0, _th)
                     else:
-                        vth = max(-0.05, _th)
+                        vth = max(-max_vth / 2.0, _th)
 
                     if distance >= 0.05:
                         vx = min(0.03, distance / 2)
